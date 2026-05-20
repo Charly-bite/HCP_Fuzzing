@@ -1,16 +1,34 @@
-# Binaries
+# Binaries and Executables
 fuzzer.exe
 mockproxies.exe
 stealth_fuzzer
 results_server
 *.exe
 *.bin
+*.test
 
-# Logs and Reports
+# Sensitive Data
+.env
+*.pem
+*.key
+id_rsa*
+secrets.json
+config/local_auth.json
+
+# Logs and Temporary Reports
 *.log
 Fuzzing_Report.html
 nohup.out
+dummy.log
 
-# IDEs
+# Build Artifacts
+/cluster_data/
+vendor/
+obj/
+bin/
+
+# IDE and System Files
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
