@@ -1,0 +1,8 @@
+admin
+login
+backup
+config
+dashboard
+hidden
+test
+user

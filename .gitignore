@@ -1,0 +1,16 @@
+# Binaries
+fuzzer.exe
+mockproxies.exe
+stealth_fuzzer
+results_server
+*.exe
+*.bin
+
+# Logs and Reports
+*.log
+Fuzzing_Report.html
+nohup.out
+
+# IDEs
+.vscode/
+.idea/
