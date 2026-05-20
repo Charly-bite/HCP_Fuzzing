@@ -4,16 +4,28 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 )
+
+const specWordlistDir = "/cluster_data/fuzzer/wordlists"
 
 // FuzzSubdomains attempts to discover virtual hosts by manipulating the Host header.
 func FuzzSubdomains(fc *FuzzClient, targetBase string, words []string, allLinks *[]string, validStatuses []int) {
 	log.Printf("[~] Starting Advanced Subdomain Fuzzing (VHost) on %s", targetBase)
 	
-	for i, word := range words {
-		if i > 5 { break } // Stub limit for lab
-		host := word + ".example.com"
+	// Load specialized subdomain wordlist
+	subWords, err := ReadWordlist(filepath.Join(specWordlistDir, "subdomains.txt"))
+	if err != nil {
+		log.Printf("[-] Error loading subdomain wordlist, falling back to campaign wordlist: %v", err)
+		subWords = words
+	}
+
+	for _, word := range subWords {
+		host := word + "." + targetBase
+		// Remove protocol if it's in the host header
+		host = strings.ReplaceAll(host, "http://", "")
+		host = strings.ReplaceAll(host, "https://", "")
 		
 		req, _ := http.NewRequestWithContext(context.Background(), "GET", targetBase, nil)
 		req.Host = host
@@ -32,9 +44,14 @@ func FuzzSubdomains(fc *FuzzClient, targetBase string, words []string, allLinks 
 func FuzzAPI(fc *FuzzClient, targetBase string, words []string, allLinks *[]string, validStatuses []int) {
 	log.Printf("[~] Starting Advanced API Fuzzing (JSON/REST/GraphQL) on %s", targetBase)
 	
-	apiPaths := []string{"/api/v1/", "/graphql", "/swagger"}
-	for _, p := range apiPaths {
-		testURL := strings.TrimRight(targetBase, "/") + p
+	apiWords, err := ReadWordlist(filepath.Join(specWordlistDir, "api_endpoints.txt"))
+	if err != nil {
+		log.Printf("[-] Error loading API wordlist, falling back to campaign wordlist: %v", err)
+		apiWords = words
+	}
+
+	for _, p := range apiWords {
+		testURL := strings.TrimRight(targetBase, "/") + "/" + p
 		req, _ := http.NewRequestWithContext(context.Background(), "POST", testURL, strings.NewReader(`{"test":true}`))
 		req.Header.Set("Content-Type", "application/json")
 		
@@ -53,9 +70,20 @@ func FuzzAPI(fc *FuzzClient, targetBase string, words []string, allLinks *[]stri
 func FuzzParameters(fc *FuzzClient, targetBase string, words []string, allLinks *[]string, validStatuses []int) {
 	log.Printf("[~] Starting Advanced Parameter Fuzzing on %s", targetBase)
 	
-	for i, word := range words {
-		if i > 5 { break } // Stub limit for lab
-		testURL := targetBase + "?" + word + "=1"
+	paramWords, err := ReadWordlist(filepath.Join(specWordlistDir, "parameters.txt"))
+	if err != nil {
+		log.Printf("[-] Error loading parameter wordlist: %v", err)
+		return
+	}
+
+	for _, word := range paramWords {
+		testURL := targetBase
+		if strings.Contains(targetBase, "?") {
+			testURL += "&" + word + "=1"
+		} else {
+			testURL += "?" + word + "=1"
+		}
+		
 		req, _ := http.NewRequestWithContext(context.Background(), "GET", testURL, nil)
 		resp, err := fc.Do(req)
 		if err == nil && resp != nil {
@@ -72,9 +100,14 @@ func FuzzParameters(fc *FuzzClient, targetBase string, words []string, allLinks 
 // FuzzMethods cycles through HTTP methods on endpoints.
 func FuzzMethods(fc *FuzzClient, targetBase string, validStatuses []int) {
 	log.Printf("[~] Starting Advanced HTTP Method Fuzzing on %s", targetBase)
-	methods := []string{"POST", "PUT", "DELETE", "OPTIONS", "TRACE", "PATCH"}
 	
-	for _, method := range methods {
+	methodWords, err := ReadWordlist(filepath.Join(specWordlistDir, "http_methods.txt"))
+	if err != nil {
+		log.Printf("[-] Error loading methods wordlist: %v", err)
+		return
+	}
+	
+	for _, method := range methodWords {
 		req, _ := http.NewRequestWithContext(context.Background(), method, targetBase, nil)
 		resp, err := fc.Do(req)
 		if err == nil && resp != nil {
@@ -90,19 +123,20 @@ func FuzzMethods(fc *FuzzClient, targetBase string, validStatuses []int) {
 // FuzzHeaders injects evasion headers to bypass auth or firewalls.
 func FuzzHeaders(fc *FuzzClient, targetBase string, validStatuses []int) {
 	log.Printf("[~] Starting Advanced Header/Bypass Fuzzing on %s", targetBase)
-	headers := map[string]string{
-		"X-Forwarded-For": "127.0.0.1",
-		"X-Original-URL":  "/admin",
-		"X-Custom-IP-Authorization": "127.0.0.1",
+	
+	headerWords, err := ReadWordlist(filepath.Join(specWordlistDir, "headers_injection.txt"))
+	if err != nil {
+		log.Printf("[-] Error loading headers wordlist: %v", err)
+		return
 	}
 	
-	for key, val := range headers {
+	for _, key := range headerWords {
 		req, _ := http.NewRequestWithContext(context.Background(), "GET", targetBase, nil)
-		req.Header.Set(key, val)
+		req.Header.Set(key, "127.0.0.1")
 		resp, err := fc.Do(req)
 		if err == nil && resp != nil {
 			if containsInt(validStatuses, resp.StatusCode) {
-				log.Printf("[+] Found Header Bypass! [%s: %s] %s (Status: %d, Size: %d)", key, val, targetBase, resp.StatusCode, resp.ContentLength)
+				log.Printf("[+] Found Header Bypass! [%s: 127.0.0.1] %s (Status: %d, Size: %d)", key, targetBase, resp.StatusCode, resp.ContentLength)
 			}
 			resp.Body.Close()
 		}
